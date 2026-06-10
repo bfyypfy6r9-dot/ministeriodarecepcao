@@ -1,0 +1,57 @@
+{
+  "entities": {
+    "User": {
+      "title": "User",
+      "description": "User profile with roles",
+      "type": "object",
+      "properties": {
+        "email": { "type": "string" },
+        "role": { "type": "string", "enum": ["admin", "user"] },
+        "status": { "type": "string", "enum": ["pendente", "ativo"] },
+        "igreja_vinculada": { "type": "string" }
+      },
+      "required": ["email", "role", "status"]
+    },
+    "Recepcao": {
+      "title": "Recepcao",
+      "description": "Visitante ou membro",
+      "type": "object",
+      "properties": {
+        "igreja": { "type": "string" },
+        "nome": { "type": "string" },
+        "data_nascimento": { "type": "string" },
+        "whatsapp": { "type": "string" },
+        "origem": { "type": "string", "enum": ["Visita Comum", "Evangelismo", "Quebrando o Silêncio", "Impacto Esperança"] },
+        "createdAt": { "type": "string" },
+        "criadoPor": { "type": "string" }
+      },
+      "required": ["igreja", "nome", "whatsapp", "origem", "createdAt", "criadoPor"]
+    },
+    "Presenca": {
+      "title": "Presenca",
+      "description": "Registro de presença em um culto",
+      "type": "object",
+      "properties": {
+        "culto": { "type": "string", "enum": ["Sábado", "Domingo", "Quarta-feira", "Escola Sabatina"] },
+        "dataStr": { "type": "string" },
+        "createdAt": { "type": "string" },
+        "registradoPor": { "type": "string" }
+      },
+      "required": ["culto", "dataStr", "createdAt", "registradoPor"]
+    }
+  },
+  "firestore": {
+    "users/{userId}": {
+      "schema": { "$ref": "#/entities/User" },
+      "description": "Gestão de acessos"
+    },
+    "recepcao/{recepcaoId}": {
+      "schema": { "$ref": "#/entities/Recepcao" },
+      "description": "Visitantes e membros"
+    },
+    "recepcao/{recepcaoId}/presencas/{presencaId}": {
+      "schema": { "$ref": "#/entities/Presenca" },
+      "description": "Check-ins de visitantes e membros"
+    }
+  }
+}

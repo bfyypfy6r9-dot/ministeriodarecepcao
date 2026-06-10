@@ -1,0 +1,120 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if false;
+    }
+
+    function isSignedIn() { 
+      return request.auth != null; 
+    }
+    
+    function incoming() { return request.resource.data; }
+    function existing() { return resource.data; }
+    
+    function isSuperAdmin() { 
+      return isSignedIn() && request.auth.token.email == 'prps2013araujo@gmail.com';
+    }
+    
+    function getUserDoc() {
+      let docRef = /databases/$(database)/documents/users/$(request.auth.uid);
+      return exists(docRef) ? get(docRef).data : null;
+    }
+    
+    function isVerifiedAdmin() {
+      let userDoc = getUserDoc();
+      return isSuperAdmin() || (userDoc != null && userDoc.role == 'admin');
+    }
+    
+    function isUserOfChurch(churchName) {
+      let user = getUserDoc();
+      return user != null && user.status == 'ativo' && user.igreja_vinculada == churchName;
+    }
+
+    function isValidId(id) { 
+      return id is string && id.size() > 0 && id.size() <= 128;
+    }
+
+    function isValidUser(data) {
+      let hasReqKeys = data.keys().hasAll(['email', 'role', 'status']);
+      let correctTypes = data.email is string && data.email.size() <= 200 &&
+                         data.role is string && (data.role == 'user' || data.role == 'admin') &&
+                         data.status is string && (data.status == 'pendente' || data.status == 'ativo');
+      let validReq = hasReqKeys && correctTypes;
+      let validIgreja = !('igreja_vinculada' in data) || (data.igreja_vinculada is string && data.igreja_vinculada.size() <= 200);
+      return validReq && validIgreja;
+    }
+
+    function isValidRecepcao(data) {
+      let keys = ['igreja', 'nome', 'whatsapp', 'origem', 'createdAt', 'criadoPor'];
+      let hasReqKeys = data.keys().hasAll(keys) && data.keys().size() >= 6 && data.keys().size() <= 7;
+      let correctTypes = data.igreja is string && data.igreja.size() <= 200 &&
+                         data.nome is string && data.nome.size() <= 200 &&
+                         data.whatsapp is string && data.whatsapp.size() <= 50 &&
+                         data.origem is string && (data.origem == 'Visita Comum' || data.origem == 'Evangelismo' || data.origem == 'Quebrando o Silêncio' || data.origem == 'Impacto Esperança' || data.origem == 'Culto de domingo' || data.origem == 'Culto de quarta' || data.origem == 'Culto de sábado' || data.origem == 'Escola sabatina' || data.origem == 'PG' || data.origem == 'Ação Social') &&
+                         data.criadoPor == request.auth.uid;
+      let validNascimento = !('data_nascimento' in data) || (data.data_nascimento is string && data.data_nascimento.size() <= 50);
+      return hasReqKeys && correctTypes && validNascimento;
+    }
+
+    function isValidPresenca(data) {
+      let keys = ['culto', 'dataStr', 'createdAt', 'registradoPor'];
+      let hasReqKeys = data.keys().hasAll(keys) && data.keys().size() == 4;
+      let correctTypes = data.culto is string && (data.culto == 'Sábado' || data.culto == 'Domingo' || data.culto == 'Quarta-feira' || data.culto == 'Escola Sabatina') &&
+                         data.dataStr is string && data.dataStr.size() <= 50 &&
+                         data.registradoPor == request.auth.uid;
+      return hasReqKeys && correctTypes;
+    }
+
+    match /users/{userId} {
+      allow read: if isSignedIn();
+      
+      allow create: if isValidId(userId) && isSignedIn() && request.auth.uid == userId
+                    && isValidUser(incoming())
+                    && (isSuperAdmin() || (incoming().role == 'user' && incoming().status == 'pendente'));
+
+      allow update: if isValidId(userId) && isSignedIn() 
+                    && (
+                      isSuperAdmin() ||
+                      (
+                        isValidUser(incoming()) &&
+                        (
+                          isVerifiedAdmin() ||
+                          (request.auth.uid == userId && incoming().diff(existing()).affectedKeys().hasOnly(['igreja_vinculada', 'status', 'role']) && incoming().role == existing().role && incoming().status == existing().status)
+                        )
+                      )
+                    );
+                    
+      allow delete: if isVerifiedAdmin();
+    }
+
+    match /recepcao/{recepcaoId} {
+      allow get: if isValidId(recepcaoId) && isSignedIn() && (isVerifiedAdmin() || isUserOfChurch(existing().igreja));
+      allow list: if isSignedIn() && (isVerifiedAdmin() || isUserOfChurch(resource.data.igreja));
+      
+      allow create: if isValidId(recepcaoId) && isSignedIn() && isValidRecepcao(incoming())
+                    && (isVerifiedAdmin() || isUserOfChurch(incoming().igreja));
+                    
+      allow update: if isValidId(recepcaoId) && isSignedIn() && isValidRecepcao(incoming())
+                    && (isVerifiedAdmin() || isUserOfChurch(existing().igreja))
+                    && incoming().igreja == existing().igreja;
+                    
+      allow delete: if isSignedIn() && (isVerifiedAdmin() || isUserOfChurch(existing().igreja));
+      
+      match /presencas/{presencaId} {
+        allow get: if isValidId(presencaId) && isSignedIn() && exists(/databases/$(database)/documents/recepcao/$(recepcaoId)) 
+                    && (isVerifiedAdmin() || isUserOfChurch(get(/databases/$(database)/documents/recepcao/$(recepcaoId)).data.igreja));
+                    
+        allow list: if isSignedIn() && exists(/databases/$(database)/documents/recepcao/$(recepcaoId)) 
+                    && (isVerifiedAdmin() || isUserOfChurch(get(/databases/$(database)/documents/recepcao/$(recepcaoId)).data.igreja));
+                    
+        allow create: if isValidId(presencaId) && isSignedIn() && isValidPresenca(incoming())
+                      && exists(/databases/$(database)/documents/recepcao/$(recepcaoId))
+                      && (isVerifiedAdmin() || isUserOfChurch(get(/databases/$(database)/documents/recepcao/$(recepcaoId)).data.igreja));
+                      
+        allow update: if isValidId(presencaId) && isVerifiedAdmin() && isValidPresenca(incoming());
+        allow delete: if isValidId(presencaId) && isVerifiedAdmin();
+      }
+    }
+  }
+}
